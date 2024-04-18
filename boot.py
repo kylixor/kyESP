@@ -7,8 +7,10 @@ gc.collect()
 from network import STA_IF, WLAN
 gc.collect()
 
-SSID = 'Langhill2.0'
-WIFI_KEY = '#PennyPots2012'
+print('Reading in WiFi credentials...')
+with open('.env') as file:
+    SSID = file.readline().rstrip("\n")
+    WIFI_KEY = file.readline().rstrip("\n")
 
 led_pin = Pin(2, Pin.OUT)
 led = Signal(led_pin, invert=True)
@@ -16,6 +18,7 @@ led.off()
 
 w = WLAN(STA_IF)
 w.active(True)
+print(f'Connecting to "{SSID}" with key "{WIFI_KEY}"')
 w.connect(SSID, WIFI_KEY)
 while not w.isconnected():
     pass

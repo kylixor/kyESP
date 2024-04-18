@@ -1,8 +1,8 @@
 import asyncio
 import gc
-
 import json
-from machine import Pin, Signal, ADC
+
+from machine import ADC, Pin, Signal
 from micropython import const
 
 gc.collect()
@@ -35,195 +35,6 @@ HTML_HEAD = const("""
 </head>
 """)
 
-GRAPH_HTML = const("""
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>ESP IOT DASHBOARD</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" href="favicon.png">
-    <link rel="stylesheet" type="text/css" href="style.css">
-    <script src="https://code.highcharts.com/highcharts.js"></script>
-  </head>
-  <body>
-    <div class="topnav">
-      <h1>ESP WEB SERVER CHARTS</h1>
-    </div>
-    <div class="content">
-      <div class="card-grid">
-        <div class="card">
-          <p class="card-title">Temperature Chart</p>
-          <div id="chart-temperature" class="chart-container"></div>
-        </div>
-      </div>
-    </div>
-    <script src="script.js"></script>
-  </body>
-</html>
-""")
-
-GRAPH_CSS = const("""
-html {
-    font-family: Arial, Helvetica, sans-serif;
-    display: inline-block;
-    text-align: center;
-}
-
-h1 {
-    font-size: 1.8rem;
-    color: white;
-}
-
-p {
-    font-size: 1.4rem;
-}
-
-.topnav {
-    overflow: hidden;
-    background-color: #0A1128;
-}
-
-body {
-    margin: 0;
-}
-
-.content {
-    padding: 5%;
-}
-
-.card-grid {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: grid;
-    grid-gap: 2rem;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-}
-
-.card {
-    background-color: white;
-    box-shadow: 2px 2px 12px 1px rgba(140, 140, 140, .5);
-}
-
-.card-title {
-    font-size: 1.2rem;
-    font-weight: bold;
-    color: #034078
-}
-
-.chart-container {
-    padding-right: 5%;
-    padding-left: 5%;
-}
-""")
-
-GRAPH_JS = const("""
-// Complete project details: https://randomnerdtutorials.com/esp32-plot-readings-charts-multiple/
-
-// Get current sensor readings when the page loads
-window.addEventListener('load', function() {
-    setInterval(function() {
-        getReadings();
-    }, 1000);
-});
-
-// Create Temperature Chart
-var chartT = new Highcharts.Chart({
-  chart:{
-    renderTo:'chart-temperature'
-  },
-  series: [
-    {
-      name: 'Light',
-      type: 'line',
-      color: '#101D42',
-      marker: {
-        symbol: 'circle',
-        radius: 3,
-        fillColor: '#101D42',
-      }
-    },
-  ],
-  title: {
-    text: undefined
-  },
-  xAxis: {
-    type: 'datetime',
-    dateTimeLabelFormats: { second: '%H:%M:%S' }
-  },
-  yAxis: {
-    title: {
-      text: 'Percent of Light'
-    }
-  },
-  credits: {
-    enabled: false
-  }
-});
-
-
-//Plot temperature in the temperature chart
-function plotTemperature(jsonValue) {
-
-  var keys = Object.keys(jsonValue);
-  console.log(keys);
-  console.log(keys.length);
-
-  for (var i = 0; i < keys.length; i++){
-    var x = (new Date()).getTime();
-    console.log(x);
-    const key = keys[i];
-    var y = Number(jsonValue[key]);
-    console.log(y);
-
-    if(chartT.series[i].data.length > 40) {
-      chartT.series[i].addPoint([x, y], true, true, true);
-    } else {
-      chartT.series[i].addPoint([x, y], true, false, true);
-    }
-
-  }
-}
-
-// Function to get current readings on the webpage when it loads for the first time
-function getReadings(){
-  var xhr = new XMLHttpRequest();
-  xhr.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      var myObj = JSON.parse(this.responseText);
-      console.log(myObj);
-      plotTemperature(myObj);
-    }
-  };
-  xhr.open("GET", "/ldr", true);
-  xhr.send();
-}
-
-if (!!window.EventSource) {
-  var source = new EventSource('/events');
-
-  source.addEventListener('open', function(e) {
-    console.log("Events Connected");
-  }, false);
-
-  source.addEventListener('error', function(e) {
-    if (e.target.readyState != EventSource.OPEN) {
-      console.log("Events Disconnected");
-    }
-  }, false);
-
-  source.addEventListener('message', function(e) {
-    console.log("message", e.data);
-  }, false);
-
-  source.addEventListener('new_readings', function(e) {
-    console.log("new_readings", e.data);
-    var myObj = JSON.parse(e.data);
-    console.log(myObj);
-    plotTemperature(myObj);
-  }, false);
-}
-""")
-
 # HTML template for the webpage
 def homepage(led_state, ldr_state):
     html = f"""
@@ -244,9 +55,9 @@ def homepage(led_state, ldr_state):
     return html 
 
 async def handle_client(reader, writer):
-    global led_state
+    # global led_state
     led_state = led.value()
-    global ldr_state
+    # global ldr_state
     ldr_state = ldr.get_percent()
     
     request_line = await reader.readline()
@@ -260,14 +71,16 @@ async def handle_client(reader, writer):
     
     # Process the request and update variables
     if url == '/style.css':
-        writer.write('HTTP/1.0 200 OK\r\nContent-type: text/css\r\n\r\n')
-        writer.write(GRAPH_CSS)
+        with open('style.css', 'r') as f:
+            writer.write('HTTP/1.0 200 OK\r\nContent-type: text/css\r\n\r\n')
+            writer.write(f.read())
         await writer.drain()
         await writer.wait_closed()
         return
     elif url == '/script.js':
-        writer.write('HTTP/1.0 200 OK\r\nContent-type: text/javascript\r\n\r\n')
-        writer.write(GRAPH_JS)
+        with open('script.js', 'r') as f:
+            writer.write('HTTP/1.0 200 OK\r\nContent-type: text/javascript\r\n\r\n')
+            writer.write(f.read())
         await writer.drain()
         await writer.wait_closed()
         return
@@ -285,8 +98,9 @@ async def handle_client(reader, writer):
         return
 
     # Generate HTML response
-    response = homepage(led_state, ldr_state)
-    response = GRAPH_HTML
+    # response = homepage(led_state, ldr_state)
+    with open('graph.html', 'r') as f:
+        response = f.read()
 
     # Send the HTTP response and close the connection
     writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
