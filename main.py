@@ -16,8 +16,8 @@ class LDR:
     def __init__(self, adc_pin: int) -> None:
         self.ldr = ADC(adc_pin)
 
-    def get_percent(self) -> int:
-        return int(self.ldr.read_u16() / 65535 * 100)
+    def get_percent(self) -> float:
+        return self.ldr.read_u16() / 65535 * 100
 
 ldr = LDR(0)
 
@@ -34,6 +34,45 @@ HTML_HEAD = const("""
     </style>
 </head>
 """)
+
+async def response_file(writer, file_path: str, content_type: str):
+    with open(file_path) as f:
+        writer.write(f'HTTP/1.0 200 OK\r\nContent-type: text/{content_type}\r\n\r\n')
+        writer.write(f.read())
+    await writer.drain()
+    await writer.wait_closed()
+
+async def response_json(writer, json_dict: dict):
+    writer.write('HTTP/1.0 200 OK\r\nContent-type: text/json\r\n\r\n')
+    writer.write(json.dumps(json_dict))
+    await writer.drain()
+    await writer.wait_closed()
+
+async def response_html(writer, html: str):
+    writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+    writer.write(html)
+    await writer.drain()
+    await writer.wait_closed()
+
+async def response_event(writer, generate):
+    writer.write('HTTP/1.0 200 OK\nContent-type: text/event-stream\nCache-Control: no-cache\n\n')
+    await writer.drain()
+    counter = 0
+    try:
+        while True:
+            writer.write(f'id: {counter}\n')
+            writer.write('event: ldrData\n')
+            data = { 
+                'ldrData': ldr.get_percent(),
+            }
+            data_str = f'data: {json.dumps(data)}'
+            writer.write(data_str)
+            writer.write('\n\n')
+            await writer.drain()
+            await asyncio.sleep(0.25)
+            counter += 1
+    finally:
+        await writer.wait_closed()
 
 # HTML template for the webpage
 def homepage(led_state, ldr_state):
@@ -56,13 +95,13 @@ def homepage(led_state, ldr_state):
 
 async def handle_client(reader, writer):
     # global led_state
-    led_state = led.value()
+    # led_state = led.value()
     # global ldr_state
-    ldr_state = ldr.get_percent()
+    # ldr_state = ldr.get_percent()
     
     request_line = await reader.readline()
     
-    # Skip HTTP request headers
+    # Skip the rest of the HTTP headers
     while await reader.readline() != b"\r\n":
         pass
     
@@ -70,43 +109,25 @@ async def handle_client(reader, writer):
     print(f'{verb} Request: {url}')
     
     # Process the request and update variables
-    if url == '/style.css':
-        with open('style.css', 'r') as f:
-            writer.write('HTTP/1.0 200 OK\r\nContent-type: text/css\r\n\r\n')
-            writer.write(f.read())
-        await writer.drain()
-        await writer.wait_closed()
-        return
+    if url == '/events/ldr':
+        return await response_event(writer, 9)
+    elif url == '/style.css':
+        return await response_file(writer, 'style.css', 'css')
     elif url == '/script.js':
-        with open('script.js', 'r') as f:
-            writer.write('HTTP/1.0 200 OK\r\nContent-type: text/javascript\r\n\r\n')
-            writer.write(f.read())
-        await writer.drain()
-        await writer.wait_closed()
-        return
+        return await response_file(writer, 'script.js', 'javascript')
     elif url == '/led/toggle':
         led.off() if led.value() else led.on()
         led_state = 'ON' if led.value() else 'OFF'
         print(f'LED now {led_state}')
+        return await response_json(writer, {"led": led_state})
     elif url == '/ldr':
         ldr_state = ldr.get_percent()
         print(f'LDR reads {ldr_state}')
-        writer.write('HTTP/1.0 200 OK\r\nContent-type: text/json\r\n\r\n')
-        writer.write(json.dumps({"graph1": ldr_state}))
-        await writer.drain()
-        await writer.wait_closed()
-        return
+        return await response_json(writer, {"graph1": ldr_state})
 
-    # Generate HTML response
-    # response = homepage(led_state, ldr_state)
     with open('graph.html', 'r') as f:
-        response = f.read()
-
-    # Send the HTTP response and close the connection
-    writer.write('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
-    writer.write(response)
-    await writer.drain()
-    await writer.wait_closed()
+        html = f.read()
+    return await response_html(writer, html)
     
 async def blink_led():
     while True:
